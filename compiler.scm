@@ -4,7 +4,8 @@
 (define (seq . code)
   (apply append code))
 (define (gen-label)
-  (string->symbol (format "L_~a" (+ 1 *label-num*))))
+  (set! *label-num* (+ 1 *label-num*))
+  (string->symbol (format "L_~a" *label-num*)))
 (define (gen-var var env)
   (let ((p (in-env-p var env)))
     (if p
@@ -39,18 +40,23 @@
 (define (comp-if pred then else env)
   (let ((l1 (gen-label))
         (l2 (gen-label)))
-    (seq (comp pred env) (gen 'FJUMP L1)
-         (comp then env) (gen 'JUMP L2)
-         (list l1) (comp else env)
+    (seq (comp pred env)
+         (gen 'cmp 'al 0)
+         (gen 'je l1)
+         (comp then env)
+         (gen 'jmp l2)
+         (list l1)
+         (comp else env)
          (list l2))))
 (define (comp x env)
   "Compile the expression into a list of instructions"
   (cond
-;   ((symbol? x)  (gen-var x env))
-   ((integer? x) (gen 'PUSH x))
+   ((integer? x) (gen 'mov 'rax x))
+   ((symbol? x)  (gen-var x env))
                                         ; TODO macros
    ((case (car x)
-      (quote (gen 'PUSH (cadr x)))
+      (quote (gen 'mov 'rax (cadr x)))
+      (if    (comp-if (cadr x) (caddr x) (cadddr x) env))
       (else   (apply gen (car x) (cdr x) ))
       ;; (begin (comp-begin (cdr x) env))
       ;; (set!  (seq (comp (third x) env) (gen-set (second x) env)))
@@ -67,6 +73,7 @@
 (define (emit asm)
   (cond
    ((string? asm) (format #t "~a ~%" asm))
+   ((symbol? asm) (format #t "~a: ~%" asm))
    ((pair? asm)
     (begin
       (format #t "~a" (car asm))
